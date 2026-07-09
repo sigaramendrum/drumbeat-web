@@ -1,0 +1,3 @@
+title = "behaviour-kernel Collab secret-scan baseline"
+[extend]
+useDefault = true

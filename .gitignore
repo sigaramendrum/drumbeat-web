@@ -1,0 +1,11 @@
+# behaviour-kernel Collab .gitignore template
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*_CONFIDENTIAL.*
+.DS_Store
+__pycache__/
+*.pyc
+node_modules/
