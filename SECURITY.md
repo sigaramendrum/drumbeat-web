@@ -1,57 +1,65 @@
-# SECURITY.md — `drumbeat-web` (public site)
-
-*This repository is public and served to the internet. Engineering controls live in
-`drumbeat-app/SECURITY.md`; this document covers what is specific to a public artefact.*
+# Security policy
 
 ## Reporting a vulnerability
 
-Email **sarvesh.sathish@sigaramendrum.com** with a description and a reproduction. Do not open a public
-issue. Acknowledgement within 2 business days; a fix or documented mitigation within 30 days for
-anything exploitable.
+Email **sarvesh.sathish@sigaramendrum.com** with a description and, where relevant, a reproduction.
+Please do not open a public issue, and please do not include live credentials in the report.
 
-**In scope:** this repository and the site it serves — content injection, a hostile dependency, a
-leaked artefact in git history, or a privacy problem in what the page loads. **Out of scope:** missing
-headers with no demonstrated impact, and scanner output without a working example.
+We aim to acknowledge within 2 business days and to fix or document a mitigation for anything
+exploitable within 30 days. These are targets, not a contractual SLA: this is a small pre-launch team
+with a single reporting mailbox and no on-call rota. We would rather state that plainly than publish a
+commitment we cannot yet demonstrate.
 
-## The primary risk is disclosure, not exploitation
+We do not run a paid bounty. We will credit you unless you ask us not to.
 
-The page is static HTML with no backend, no authentication, and no user input. There is very little to
-exploit. What there is to lose is **information**, and git history is permanent and mirrored within
-seconds of a push.
+**In scope:** this repository and, once it is published, the site it serves — content injection, a
+hostile dependency, a secret or artefact exposed in git history, or a privacy problem in what the page
+loads.
 
-Treated as a security incident, not a content mistake:
+**Out of scope:** missing HTTP headers with no demonstrated impact, scanner output without a working
+example, and denial of service by volume.
 
-- pilot customer names, logos, quotes or counts
-- pricing, roadmap, or GTM strategy
-- anything about the architecture, stack, or vendors of `drumbeat-app`
-- internal metrics, ARR figures, targets or forecasts
-- a commit message that reveals any of the above
+## Current state
 
-A later commit does not undo this. Assume anything pushed is captured.
+The site is **not deployed**. GitHub Pages is not enabled for this repository, so there is no live
+origin to test. The repository contains static HTML with no backend, no authentication, no user input
+and no dependencies.
 
-## Controls
+## What we are actually protecting
 
-**Secret scanning** is armed, with a pre-commit hook and a CI job. A finding is a stop. If the hook is
-not installed in your checkout, it is not protecting you — install it before your first commit.
+Because there is no server and no user data, the realistic risk here is **disclosure, not
+exploitation**. The repository is public and git history is permanent and widely mirrored, so anything
+committed should be assumed captured on push.
 
-**Dependencies.** The page has none, deliberately. Adding one puts third-party code into a public
-artefact and needs an ADR in the `drumbeat` repo first. No CDN script tags, no remotely-hosted fonts,
-no analytics that sets a cookie without a banner — each of those is a privacy commitment made on the
-company's behalf, for a product that sells EU data residency.
+We treat the following as a security matter rather than a content mistake: customer or pilot
+identities, pricing, roadmap, internal metrics, and details of the product's architecture or vendors —
+including in commit messages and filenames.
 
-**Content review before push.** Read `git diff --cached` as a stranger. Ask what the diff reveals
-about the business even when each line looks harmless: a section headed for a named segment discloses
-the segment, and a commented-out testimonial discloses a pilot.
+## Controls, and their limits
 
-**Transport and headers.** The site is HTTPS-only. Where the host allows it, set a
-`Content-Security-Policy` that permits only self-hosted assets, plus `X-Content-Type-Options`,
-`Referrer-Policy` and `X-Frame-Options`. With no scripts and no third-party origins these cost
-nothing and remove whole classes of finding.
+**Secret scanning** runs in CI and in a pre-commit hook. We are explicit that this is a speed bump
+rather than a control: the scanner's configuration lives in the repository, so a change can weaken it
+in the same commit being scanned. This was verified, not assumed. GitHub push protection is the control
+that does not travel in the diff.
 
-## If something leaks
+The pre-commit hook only runs in a clone that has `core.hooksPath` set, so it protects a checkout only
+after it has been installed there.
 
-1. Email sarvesh.sathish@sigaramendrum.com — do not discuss it in an issue or a public commit.
-2. Do not force-push to "remove" it. Assume it is already captured, and preserve the history for the
-   assessment.
-3. The decision about disclosure or customer notification belongs to Sarvesh and Arun, and gets a
-   `DECISION` stub in the `drumbeat` repo.
+**Dependencies.** The page has none, deliberately. Adding one introduces third-party code into a public
+artefact and requires a recorded decision first. There are no CDN script tags, no remotely-hosted fonts
+and no analytics.
+
+**Transport and headers.** When the site is published it will be HTTPS-only. A restrictive
+`Content-Security-Policy` permitting only self-hosted assets, plus `X-Content-Type-Options`,
+`Referrer-Policy` and `X-Frame-Options`, costs nothing here given there are no scripts and no
+third-party origins.
+
+## If something is exposed
+
+1. Email the address above. Do not discuss it in an issue or a public commit message.
+2. Do not force-push to remove it. Assume it is already captured, and preserve the history so the
+   exposure can be assessed accurately.
+3. Rotate anything credential-shaped immediately, whether or not it looks live.
+
+The decision about disclosure or customer notification is made by the repository owners, not by
+whoever finds it.
