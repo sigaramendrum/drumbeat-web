@@ -1,0 +1,82 @@
+# Security scanning — drumbeat-web, the public landing site. Hand-written static HTML: no
+# build step, no package.json, no lockfile, no container. The only meaningful risk class is
+# a leaked secret, and this is the worst place in the project to leak one, because anything
+# pushed here is world-readable immediately, history included. SAST, dependency and container
+# scanning would be dead config and are deliberately omitted — add them if a package.json or
+# a Dockerfile ever lands.
+#
+# ACTION PINNING: `uses:` is pinned to a full commit SHA, with the tag in a trailing comment.
+# A mutable tag can be repointed by the action's owner, or by anyone who compromises that
+# account, and the workflow would execute whatever it now points at.
+#
+# The gitleaks binary is downloaded rather than run as an action, so it gets the same
+# treatment: an exact version, and the published SHA-256 verified BEFORE the binary executes.
+# An unverified `curl` piped into a shell is the same trust problem as a mutable tag.
+#
+# THE SCANNER PIN IS MANUAL. Dependabot reads `uses:` references; it does not parse `run:`
+# blocks, so nothing here or anywhere else will ever bump GITLEAKS_VERSION / GITLEAKS_SHA256.
+# Bump both by hand: take the version and its matching linux_x64 line from that release's
+# checksums.txt. Left alone, this scanner's ruleset freezes at the version below.
+#
+# WHAT THIS JOB CANNOT PROTECT AGAINST. On a pull request, both `.gitleaks.toml` and this
+# workflow file come from the branch being scanned, so a pull request can weaken or disable
+# its own scan. That was proven, not assumed: appending a global path allowlist to
+# `.gitleaks.toml` alongside a live key produced "no leaks found", exit 0. No arrangement of
+# flags inside a workflow can fix it. It is closed by branch protection plus required review
+# on `.github/**` and `.gitleaks.toml`, which is tracked separately.
+name: security
+on:
+  pull_request:
+  # Deliberately unfiltered — NOT `branches: [main]`. Every ref pushed to a public repo is
+  # world-readable the instant it lands, whether or not a pull request is ever opened.
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # all history for all refs, so a secret in an old commit is caught
+
+      - name: install gitleaks (version + checksum pinned)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          # --fail so a 404 is reported as a download failure. Without it curl writes the
+          # error body to the file and exits 0, and the operator sees a checksum mismatch —
+          # which reads as tampering rather than a bad URL.
+          curl --fail -sSLo "${RUNNER_TEMP}/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${RUNNER_TEMP}/gitleaks.tar.gz" | sha256sum -c -
+          # Extract outside the checkout: a 21 MB binary sitting in the repo root would be
+          # scanned by any future `gitleaks dir` run.
+          tar -xzf "${RUNNER_TEMP}/gitleaks.tar.gz" -C "${RUNNER_TEMP}" gitleaks
+          "${RUNNER_TEMP}/gitleaks" version
+
+      - name: gitleaks scan (all refs, full history, merge commits included)
+        # --log-opts REPLACES gitleaks' own defaults rather than extending them. Passing
+        # "-m" alone drops --all and --full-history, and a secret on a branch other than the
+        # checked-out one goes from caught to missed — verified both ways before this was
+        # written. All three flags must stay together.
+        #
+        #   -m   diff merge commits. Without it, content introduced ONLY in a merge commit
+        #        is never scanned: `git log -p` emits no diff for a merge. GitHub's web
+        #        conflict editor writes exactly that commit, server-side, where no local
+        #        hook exists. Verified: a live AWS key added in a merge commit scanned clean
+        #        at exit 0 without -m, and was caught with it.
+        #
+        #   --ignore-gitleaks-allow  otherwise a `# gitleaks:allow` comment on the same line
+        #        silences the scanner from inside the very diff being scanned. Verified: a
+        #        live key carrying that comment passed at exit 0.
+        run: |
+          "${RUNNER_TEMP}/gitleaks" git \
+            --no-banner --redact --ignore-gitleaks-allow \
+            --log-opts="-m --all --full-history" \
+            -c .gitleaks.toml .

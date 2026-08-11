@@ -1,3 +1,66 @@
-title = "behaviour-kernel Collab secret-scan baseline"
+title = "drumbeat-web secret-scan baseline"
+
 [extend]
 useDefault = true
+
+# WHY THIS RULE EXISTS.
+#
+# gitleaks' default ruleset has no rule for a connection string, so a URI carrying an inline
+# password passes both the pre-commit hook and CI untouched. Measured against this file with
+# `useDefault = true` alone before the rule was added: a real-format URI with an embedded
+# password scanned clean, exit 0, "no leaks found". The default rules key off recognisable
+# token shapes (AKIA..., ghp_..., sk-...), and a password has no shape.
+#
+# This repo holds no credentials today and is meant to keep it that way. The rule is here
+# because the cheap moment to add it is before a URI reaches history, not after — and on a
+# public repo "after" means rotating the credential, not deleting the line.
+#
+# REGEX DIALECT. gitleaks compiles rules with Go's RE2: no lookahead, no backreferences. A
+# `(?!...)` does not degrade quietly, it panics and takes the whole scan down with it — which
+# would turn the gate green-by-absence. Exclude placeholders with the allowlist below.
+#
+# Deliberately narrow: documenting a URI shape in a README must not turn CI red.
+
+[[rules]]
+id = "connection-uri-with-password"
+description = "Connection URI with an inline password (Postgres, MySQL, MongoDB, Redis, AMQP)"
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?)://[a-z0-9._%+-]+:([^\s:@/'"`]{6,})@'''
+secretGroup = 1
+keywords = [
+  "postgres://",
+  "postgresql://",
+  "mysql://",
+  "mongodb://",
+  "mongodb+srv://",
+  "redis://",
+  "rediss://",
+  "amqp://",
+  "amqps://",
+]
+
+  # Placeholder passwords only. If a real credential ever matches one of these, it was
+  # already public. Stopwords match against the CAPTURED password (secretGroup 1), which
+  # excludes the trailing '@' — so a stopword containing '@' would be an unreachable string.
+  # The forms that need to match the surrounding URI are regexes, not stopwords, because a
+  # bare stopword is a substring match and would also exempt a real password containing it.
+  [rules.allowlist]
+  regexTarget = "match"
+  stopwords = [
+    "password",
+    "passwd",
+    "changeme",
+    "placeholder",
+    "example",
+    "redacted",
+    "your-password",
+    "your_password",
+  ]
+  regexes = [
+    '''://postgres:postgres@''',
+    '''://[a-z0-9._%+-]+:secret@''',
+    '''://[a-z0-9._%+-]+:x{3,}@''',
+    '''://[a-z0-9._%+-]+:\*{3,}@''',
+    '''://[a-z0-9._%+-]+:<[^>]*>@''',
+    '''://[a-z0-9._%+-]+:\$\{[^}]*\}@''',
+    '''://[a-z0-9._%+-]+:\$[A-Za-z_][A-Za-z0-9_]*@''',
+  ]
