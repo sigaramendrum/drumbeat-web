@@ -80,3 +80,132 @@ jobs:
             --no-banner --redact --ignore-gitleaks-allow \
             --log-opts="-m --all --full-history" \
             -c .gitleaks.toml .
+
+      - name: gitleaks scan (file types the default config exempts)
+        # Runs even if the scan above failed, so one red step does not hide the other.
+        if: always()
+        # The scan above cannot see certain files at all. gitleaks' default config, inherited
+        # through `useDefault = true`, carries a global allowlist that exempts whole classes
+        # from EVERY rule. Measured against 8.30.1 with a live-format AWS key:
+        #
+        #   by extension : .svg .gltf .png .jpg .bmp .gif .tiff .pdf .docx .xlsx
+        #                  .eot .ttf .otf .woff .woff2 .bin .exe .dll .pdb
+        #   by FILENAME  : package-lock.json  yarn.lock  pnpm-lock.yaml  deno.lock
+        #                  npm-shrinkwrap.json  Pipfile.lock  poetry.lock
+        #                  gradle.lockfile  go.sum
+        #
+        # The filename group is the easy one to miss — an extension sweep does not find it —
+        # and lockfiles are plain text that routinely carry registry credentials in resolved
+        # URLs. Cargo.lock, composer.lock and uv.lock are NOT exempt, so it is an arbitrary
+        # subset rather than a rule you can reason about.
+        #
+        # The exemption cannot be switched off. Allowlists are additive, so one declared in
+        # our config appends to the inherited default instead of replacing it; `paths = []` is
+        # rejected as a config error; there is no flag or subcommand to disable or dump the
+        # default. All three were tried. So the exempt-but-textual files are copied to names
+        # the allowlist does not match, and scanned as a second pass.
+        #
+        # DELIBERATELY NOT COVERED: .pdf, .docx, .xlsx and the binaries. gitleaks skips those
+        # by content magic bytes, not only by extension — a file beginning %PDF- or PK\x03\x04
+        # is skipped whatever it is named, verified with a planted key. Covering them needs
+        # text extraction first, which is a different tool and a separate decision. Raster
+        # images and fonts stay exempt because there is no text in them to match.
+        #
+        # TWO LIMITS, both real, neither fixed here:
+        #   - This pass reads the tree at HEAD. The scan above reads all history on all refs.
+        #     So a secret added and deleted within one push sits in public history and is seen
+        #     by neither: the history scan is blind to the file type, this one to the deletion.
+        #   - `paths` allowlists in .gitleaks.toml are matched against the FLATTENED temp path,
+        #     not the repo path, so the obvious suppression for a false positive here will not
+        #     work. Suppress by fingerprint in .gitleaksignore instead.
+        #
+        # The workaround depends on an absence: `.txt` not being exempt upstream. If that ever
+        # changes this step reports success while scanning nothing, which is why it self-tests
+        # below rather than trusting a green result.
+        run: |
+          set -euo pipefail
+          base="${RUNNER_TEMP:?RUNNER_TEMP must be set}"
+          gl="${base}/gitleaks"
+
+          # ---- self-test -------------------------------------------------------------
+          # This repo may track no exempt files at all, in which case the scan below is a
+          # no-op forever and a broken pathspec, a missing binary or a changed upstream
+          # allowlist would all look exactly like success. So prove the mechanism can still
+          # go red, on every run, before trusting anything it says.
+          #
+          # The probe key is generated at runtime. A literal one in this file would be found
+          # by the history scan three steps up, which is correct of it.
+          probe="${base}/selftest"
+          rm -rf "$probe"; mkdir -p "$probe/exempt" "$probe/renamed"
+          # Written in two halves so this workflow file does not itself contain a string
+          # matching the AWS rule — the history scan two steps up would flag it, correctly.
+          # The value is synthetic and has never been a credential.
+          #
+          # Two earlier attempts at generating one failed, both worth not repeating:
+          # `tr -dc ... < /dev/urandom | head -c 16` makes head close the pipe, tr takes
+          # SIGPIPE, and under `pipefail` the step died with 141 before testing anything.
+          # A `printf '%016X'` random value is low-entropy hex, which the AWS rule does not
+          # match at all — so the self-test failed while the mechanism was working.
+          synthetic="AKIA""QYLPMN5HXQZ7TR4W"
+          printf '<svg><title>aws_access_key_id = %s</title></svg>\n' "$synthetic" > "$probe/exempt/probe.svg"
+          cp -- "$probe/exempt/probe.svg" "$probe/renamed/probe.svg.scan.txt"
+
+          set +e
+          "$gl" dir --no-banner --redact -c .gitleaks.toml "$probe/exempt"  >/dev/null 2>&1; rc_exempt=$?
+          "$gl" dir --no-banner --redact -c .gitleaks.toml "$probe/renamed" >/dev/null 2>&1; rc_renamed=$?
+          set -e
+
+          if [ "$rc_exempt" -ne 0 ]; then
+            echo "SELF-TEST FAILED: .svg was expected to be skipped in place (exit 0), got $rc_exempt."
+            echo "  Upstream may have dropped the exemption. If so this whole step is redundant"
+            echo "  and should be deleted rather than left to rot."
+            exit 1
+          fi
+          if [ "$rc_renamed" -ne 1 ]; then
+            echo "SELF-TEST FAILED: the renamed copy was expected to be scanned and flagged (exit 1), got $rc_renamed."
+            echo "  This step cannot detect anything in its current state. Do not trust a green result."
+            exit 1
+          fi
+          echo "Self-test passed: .svg is exempt in place, and scanned once renamed."
+
+          # ---- scan the real tracked files -------------------------------------------
+          shadow="${base}/exempt-scan"
+          rm -rf "$shadow"; mkdir -p "$shadow"
+
+          # Materialise the list to a file first. With `done < <(git ls-files ...)` the exit
+          # status is discarded: `set -e` cannot see it and `pipefail` does not apply, so a
+          # git failure produced zero files, a reassuring message and a GREEN step. Verified.
+          list="${base}/exempt-list"
+          git ls-files -z -- \
+            ':(icase)*.svg' \
+            ':(icase)*.gltf' \
+            ':(icase)package-lock.json'   ':(icase)**/package-lock.json' \
+            ':(icase)npm-shrinkwrap.json' ':(icase)**/npm-shrinkwrap.json' \
+            ':(icase)yarn.lock'           ':(icase)**/yarn.lock' \
+            ':(icase)pnpm-lock.yaml'      ':(icase)**/pnpm-lock.yaml' \
+            ':(icase)deno.lock'           ':(icase)**/deno.lock' \
+            ':(icase)Pipfile.lock'        ':(icase)**/Pipfile.lock' \
+            ':(icase)poetry.lock'         ':(icase)**/poetry.lock' \
+            ':(icase)gradle.lockfile'     ':(icase)**/gradle.lockfile' \
+            ':(icase)go.sum'              ':(icase)**/go.sum' \
+            > "$list"
+
+          count=0
+          while IFS= read -r -d '' f; do
+            # One directory per file. Flattening the path with tr '/' '_' is NOT injective:
+            # logo/icon.svg and logo_icon.svg both became logo_icon.svg.scan.txt, the second
+            # cp silently overwrote the first, and the count still reported both. Verified.
+            # `cp --` because a tracked file may legitimately begin with a dash.
+            mkdir -p "$shadow/$count"
+            cp -- "$f" "$shadow/$count/$(basename -- "$f").scan.txt"
+            count=$((count + 1))
+          done < "$list"
+
+          if [ "$count" -eq 0 ]; then
+            echo "No tracked files of an exempt type. Nothing further for this pass to scan."
+            exit 0
+          fi
+
+          echo "Scanning $count file(s) that the default allowlist would otherwise skip:"
+          git ls-files -- ':(icase)*.svg' ':(icase)*.gltf' | sed 's/^/  /'
+          "$gl" dir --no-banner --redact --ignore-gitleaks-allow -c .gitleaks.toml "$shadow"
