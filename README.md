@@ -29,3 +29,9 @@ the credential is. The hook is what runs before that point.
 It is a speed bump, not a control: `git commit --no-verify` skips it, a clean merge fires
 `pre-merge-commit` rather than `pre-commit`, and a clone where nobody ran the command above
 has no hook at all. Treat CI and GitHub's push protection as the controls that hold.
+
+One more gap worth knowing, because it is invisible: gitleaks' default configuration exempts
+whole file classes from every rule — `.svg`, images, fonts, PDFs, Office documents, and nine
+lockfile names such as `package-lock.json` and `pnpm-lock.yaml`. A key inside any of those
+passes the hook. CI runs a second pass that copies the textual ones to non-exempt names and
+scans the copies, so those are caught, but only after the push.

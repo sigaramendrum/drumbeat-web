@@ -16,6 +16,17 @@
 #
 # FAILS CLOSED: a missing scanner blocks the commit rather than skipping silently. A guard
 # that passes when its tool is absent is worse than no guard, because it reads as green.
+#
+# KNOWN BLIND SPOT, not fixed here. This runs gitleaks with the repo config, so it inherits
+# the default allowlist that exempts whole file classes from every rule: .svg, .gltf, images,
+# fonts, PDFs, Office documents, and nine lockfile names including package-lock.json and
+# pnpm-lock.yaml. Measured: an .svg carrying a live-format AWS key passes this hook at exit 0,
+# while the identical bytes in .html are blocked.
+#
+# CI has a second pass that copies those files to non-exempt names and scans the copies. This
+# hook does not, so for those file types the guarantee below is weaker than it reads: they are
+# caught after the push, not before. On a public repo that means rotating the credential
+# rather than deleting the line.
 set -eu
 
 if ! command -v gitleaks >/dev/null 2>&1; then
