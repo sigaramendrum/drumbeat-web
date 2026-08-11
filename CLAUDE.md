@@ -32,16 +32,20 @@ assume anything pushed is captured immediately.
 
 Secret scanning runs in `.github/workflows/security.yml` and in a pre-commit hook.
 
-**Treat both as a speed bump, not a control.** This repo's own `README.md` and `.githooks/pre-commit`
-say exactly that, and its workflow records the verified reason: appending a path allowlist to
-`.gitleaks.toml` in the same pull request being scanned produced "no leaks found", exit 0. A scanner
-whose configuration travels in the diff it inspects cannot be an authority over that diff.
+**The hook is a speed bump, not a control** — `README.md` and `.githooks/pre-commit` both say so, and
+both name CI and GitHub's push protection as the controls that hold. `--no-verify` skips it and a
+fresh clone has no hook at all.
+
+**The CI scan is weaker than those two files imply**, and `.github/workflows/security.yml` records why:
+appending a path allowlist to `.gitleaks.toml` in the same pull request being scanned produced "no
+leaks found", exit 0. A scanner whose configuration travels in the diff it inspects cannot be an
+authority over that diff. Push protection is the one control here that does not travel in the diff.
 
 Two consequences. Do not rely on a green scan as permission to push something borderline. And the hook
 only runs if this clone has `core.hooksPath` set — check before your first commit, because a hook
 present in the repository but not installed in your checkout protects nothing.
 
-GitHub push protection is the control that does not travel in the diff. Leave it on.
+So: rely on push protection, not on a green scan.
 
 ## Source of truth
 
@@ -75,6 +79,6 @@ This repo is a **publication surface, not a source.** Nothing originates here ex
 
 - `git diff --cached` read line by line, as a stranger would read it, including the commit message.
 - Nothing from the confidentiality list above, by statement or by implication.
-- Secret scanning green — and understood as a speed bump, not as clearance.
+- Secret scanning green — read as one signal, not as clearance to publish.
 - The page opens locally with no console errors and makes no external network requests.
 - No new dependency, and `README.md` still describes the repo accurately.
