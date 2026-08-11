@@ -1,0 +1,27 @@
+# Dependabot — keeps the GitHub Actions referenced by security.yml patched. There are no
+# application dependencies in this repo (static site, no package.json, no lockfile), so
+# github-actions is the only ecosystem that would find anything.
+#
+# It does NOT cover the gitleaks version and checksum pinned inside security.yml's `run:`
+# block. Dependabot parses `uses:` references only, so that pin is a manual bump and nothing
+# will remind anyone. See the note in security.yml.
+#
+# No `labels:` key: setting it REPLACES the default labels, and any label that does not
+# already exist in the repo is silently ignored. This repo has neither `dependencies` nor
+# `github-actions` defined, so naming them would produce pull requests with no labels at all
+# — strictly worse than the default, which creates and applies `dependencies` on its own.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    # Hold a newly published release for 7 days before proposing it, so a compromised or
+    # typosquatted publish has time to be found and pulled. This matters more than usual
+    # here: the action is SHA-pinned, and Dependabot rewrites the SHA and its trailing
+    # version comment together, so a malicious bump arrives looking exactly like a routine
+    # one.
+    cooldown:
+      default-days: 7

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Pre-commit secret scan for drumbeat-web.
+#
+# This repo is public. CI catches a secret only after it has been pushed, by which point it
+# is world-readable and the only honest remedy is to rotate the credential. This hook runs
+# while the secret is still local.
+#
+# Activate with:  git config core.hooksPath .githooks
+# core.hooksPath is local config and cannot be committed, so every clone must run that once.
+#
+# BE CLEAR ABOUT WHAT THIS IS: a speed bump on the honest path, not a control. It is skipped
+# by `git commit --no-verify`, it does not run on a clean merge (git fires pre-merge-commit
+# instead), and a fresh clone has no hook at all until someone runs the command above. The
+# controls that do not depend on the developer remembering anything are the CI scan and
+# GitHub's own push protection.
+#
+# FAILS CLOSED: a missing scanner blocks the commit rather than skipping silently. A guard
+# that passes when its tool is absent is worse than no guard, because it reads as green.
+set -eu
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  if [ "${DRUMBEAT_ALLOW_NO_GITLEAKS:-0}" = "1" ]; then
+    echo "warn: gitleaks not installed - secret scan SKIPPED by DRUMBEAT_ALLOW_NO_GITLEAKS=1" >&2
+    exit 0
+  fi
+  echo "X gitleaks not installed - cannot verify this commit carries no secrets." >&2
+  echo "    install:  brew install gitleaks" >&2
+  echo "    or skip once, deliberately:  DRUMBEAT_ALLOW_NO_GITLEAKS=1 git commit ..." >&2
+  exit 1
+fi
+
+# gitleaks 8.18.x and older have no `git` subcommand and report that as exit 1 — the same
+# code as a finding. Probe for the subcommand before relying on the exit status, otherwise
+# every commit made on an older scanner is reported as a secret that does not exist. This
+# was measured: 8.18.4 printed `unknown command "git"` and the hook called it a leak.
+if ! gitleaks git --help >/dev/null 2>&1; then
+  echo "X gitleaks is too old - the 'git' subcommand needs 8.19.0 or newer." >&2
+  echo "    installed: $(gitleaks version 2>/dev/null || echo unknown)" >&2
+  echo "    upgrade:   brew upgrade gitleaks" >&2
+  exit 1
+fi
+
+# --ignore-gitleaks-allow: without it, a `# gitleaks:allow` comment on the same line silences
+# the scan from inside the diff being scanned.
+set +e
+gitleaks git --staged --no-banner --redact --ignore-gitleaks-allow -c .gitleaks.toml .
+status=$?
+set -e
+
+# Exit 1 means findings. Anything else means the scanner itself failed, and saying "potential
+# secret" then sends someone hunting for a secret that was never there. The likeliest cause is
+# a gitleaks older than 8.19.0, which has no `git` subcommand.
+case "$status" in
+  0) ;;
+  1)
+    echo "X gitleaks flagged a potential secret - commit blocked" >&2
+    exit 1
+    ;;
+  *)
+    echo "X gitleaks failed to run (exit $status) - commit blocked." >&2
+    echo "    This is a scanner error, not a finding." >&2
+    echo "    The 'git' subcommand needs gitleaks 8.19.0 or newer; check: gitleaks version" >&2
+    exit 1
+    ;;
+esac
