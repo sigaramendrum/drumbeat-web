@@ -1,6 +1,6 @@
 # drumbeat-web
 
-Public landing site for Drumbeat (ADR-020 Phase 4).
+Public landing site for Drumbeat.
 
 **PUBLIC repo.** No strategy, IP, pilot, or roadmap content — marketing/landing only.
 Anything sensitive belongs in the private `drumbeat` repo, never here.
@@ -15,8 +15,12 @@ Run this once per clone, before your first commit:
 git config core.hooksPath .githooks
 ```
 
-It arms `.githooks/pre-commit`, which blocks a commit containing a secret. `core.hooksPath`
-is local git config and cannot be committed, so a fresh clone has no hook until you set it.
+It arms two hooks: `.githooks/pre-commit`, which blocks a commit containing a secret, and
+`.githooks/commit-msg`, which blocks an internal reference in the commit message. `core.hooksPath`
+is local git config and cannot be committed, so a fresh clone has neither until you set it.
+
+The message hook matters more than it looks. gitleaks scans commit content and never sees a
+message, so CI cannot cover that at all — and a message cannot be edited once pushed.
 
 Requires `gitleaks` 8.19.0 or newer (`brew install gitleaks`). The hook fails closed: no
 scanner, no commit.

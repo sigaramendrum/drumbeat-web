@@ -30,11 +30,24 @@ assume anything pushed is captured immediately.
 
 ## Guards, described honestly
 
-Secret scanning runs in `.github/workflows/security.yml` and in a pre-commit hook.
+Secret scanning runs in `.github/workflows/security.yml` and in **two** hooks: `.githooks/pre-commit`
+scans the staged diff, and `.githooks/commit-msg` blocks internal references in the message itself.
 
-**The hook is a speed bump, not a control** — `README.md` and `.githooks/pre-commit` both say so, and
-both name CI and GitHub's push protection as the controls that hold. `--no-verify` skips it and a
-fresh clone has no hook at all.
+**The commit-msg hook exists because CI structurally cannot do its job.** gitleaks scans commit
+*content*; a commit *message* is never passed to it — verified in a scratch repository whose only
+occurrence of a secret was in a subject line, which scanned clean at exit 0. A message is also the
+worse of the two to get wrong: it cannot be edited after a push and it renders on the public commit
+list. So for that class the hook is not a speed bump backed by CI; it is the only automated guard
+there is, and nothing catches what it misses.
+
+**Both hooks are speed bumps against a determined author** — `--no-verify` skips them, and a fresh
+clone has neither until `git config core.hooksPath .githooks` is run. `README.md` and
+`.githooks/pre-commit` name CI and GitHub's push protection as the controls that hold, which is right
+for content and not available for messages.
+
+**Merges made with GitHub's button bypass the message hook entirely.** The merge subject is generated
+server-side, so a branch named for an internal ticket lands in history unhooked and unscannable.
+Name branches as carefully as commits.
 
 **The CI scan is weaker than those two files imply**, and `.github/workflows/security.yml` records why:
 appending a path allowlist to `.gitleaks.toml` in the same pull request being scanned produced "no

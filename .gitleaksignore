@@ -1,0 +1,25 @@
+# Reviewed findings, accepted deliberately. One gitleaks fingerprint per line.
+#
+# Format note: `commit:file:rule:line` is commit-scoped and suppresses only that one
+# historical occurrence. The bare `file:rule:line` form is BROADER — it suppresses the rule
+# at that file and line in every commit, forever, including future re-introductions. Prefer
+# the commit-scoped form for facts about history, which is what this is.
+#
+# 2026-08-11: README.md carried an internal decision-record identifier from this repo's first
+# public commit until it was removed. The reference is gone from the current tree, but it
+# stays in the commit that introduced it, and that commit is public. Rewriting published
+# history would break every existing clone and reference for no recovery: the content was
+# world-readable for a month and must be treated as disclosed, not deleted.
+#
+# Ignored so the gate can go green on a fixed tree. Without this entry the build is red on an
+# unfixable past, which is how a real finding ends up being clicked past.
+49f3e1eda71381cbcfa482f967e52065d277eb3b:README.md:internal-decision-record-identifier:3
+
+# 2026-08-11, commit 350e733: CLAUDE.md and SECURITY.md named the private sibling repository
+# while explaining what must not appear here. A later commit — "stop claiming a deployed site,
+# and stop leaking private detail in a public repo" — removed them, so the tree is clean and
+# private-repository-name guards against their return. These four stay in published history.
+350e733ea906f3213e575a20042185c3de8d5bdc:SECURITY.md:private-repository-name:4
+350e733ea906f3213e575a20042185c3de8d5bdc:SECURITY.md:private-repository-name:26
+350e733ea906f3213e575a20042185c3de8d5bdc:CLAUDE.md:private-repository-name:21
+350e733ea906f3213e575a20042185c3de8d5bdc:CLAUDE.md:private-repository-name:64
