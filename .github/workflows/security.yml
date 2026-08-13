@@ -136,7 +136,7 @@ jobs:
           # The probe key is generated at runtime. A literal one in this file would be found
           # by the history scan three steps up, which is correct of it.
           probe="${base}/selftest"
-          rm -rf "$probe"; mkdir -p "$probe/exempt" "$probe/renamed"
+          rm -rf "$probe"; mkdir -p "$probe/exempt" "$probe/renamed" "$probe/lockexempt" "$probe/lockrenamed"
           # Written in two halves so this workflow file does not itself contain a string
           # matching the AWS rule — the history scan two steps up would flag it, correctly.
           # The value is synthetic and has never been a credential.
@@ -148,11 +148,18 @@ jobs:
           # match at all — so the self-test failed while the mechanism was working.
           synthetic="AKIA""QYLPMN5HXQZ7TR4W"
           printf '<svg><title>aws_access_key_id = %s</title></svg>\n' "$synthetic" > "$probe/exempt/probe.svg"
-          cp -- "$probe/exempt/probe.svg" "$probe/renamed/probe.svg.scan.txt"
+          cp -- "$probe/exempt/probe.svg" "$probe/renamed/copy.scan.txt"
+
+          # Probe the filename-matched class too, not just the extension-matched one. They are
+          # two different mechanisms and only one of them was covered before.
+          printf 'resolved: "https://r.example/x?_authToken=%s"\n' "$synthetic" > "$probe/lockexempt/pnpm-lock.yaml"
+          cp -- "$probe/lockexempt/pnpm-lock.yaml" "$probe/lockrenamed/copy.scan.txt"
 
           set +e
-          "$gl" dir --no-banner --redact -c .gitleaks.toml "$probe/exempt"  >/dev/null 2>&1; rc_exempt=$?
-          "$gl" dir --no-banner --redact -c .gitleaks.toml "$probe/renamed" >/dev/null 2>&1; rc_renamed=$?
+          "$gl" dir --no-banner --redact -c .gitleaks.toml "$probe/exempt"       >/dev/null 2>&1; rc_exempt=$?
+          "$gl" dir --no-banner --redact -c .gitleaks.toml "$probe/renamed"      >/dev/null 2>&1; rc_renamed=$?
+          "$gl" dir --no-banner --redact -c .gitleaks.toml "$probe/lockexempt"   >/dev/null 2>&1; rc_lock_exempt=$?
+          "$gl" dir --no-banner --redact -c .gitleaks.toml "$probe/lockrenamed"  >/dev/null 2>&1; rc_lock_renamed=$?
           set -e
 
           if [ "$rc_exempt" -ne 0 ]; then
@@ -166,7 +173,16 @@ jobs:
             echo "  This step cannot detect anything in its current state. Do not trust a green result."
             exit 1
           fi
-          echo "Self-test passed: .svg is exempt in place, and scanned once renamed."
+          if [ "$rc_lock_exempt" -ne 0 ]; then
+            echo "SELF-TEST FAILED: a lockfile name was expected to be skipped in place (exit 0), got $rc_lock_exempt."
+            exit 1
+          fi
+          if [ "$rc_lock_renamed" -ne 1 ]; then
+            echo "SELF-TEST FAILED: the renamed lockfile copy was expected to be flagged (exit 1), got $rc_lock_renamed."
+            echo "  Filename-matched exemptions are no longer being defeated by the copy. Coverage is gone."
+            exit 1
+          fi
+          echo "Self-test passed: extension- and filename-matched exemptions both hold in place, and both are scanned once copied."
 
           # ---- scan the real tracked files -------------------------------------------
           shadow="${base}/exempt-scan"
@@ -196,8 +212,14 @@ jobs:
             # logo/icon.svg and logo_icon.svg both became logo_icon.svg.scan.txt, the second
             # cp silently overwrote the first, and the count still reported both. Verified.
             # `cp --` because a tracked file may legitimately begin with a dash.
+            # OPAQUE destination name. Keeping the original basename leaves the exempt
+            # filename in the copy, and whether that still matches depends on how upstream
+            # anchors its pattern. Measured: a copy named pnpm-lock.yaml.scan.txt is caught
+            # by 8.30.1 but still EXEMPT on 8.18.4, which is what a sibling repo pins. So the
+            # lockfile coverage was working by luck of the current anchoring, not by design.
+            # An opaque name is caught by both.
             mkdir -p "$shadow/$count"
-            cp -- "$f" "$shadow/$count/$(basename -- "$f").scan.txt"
+            cp -- "$f" "$shadow/$count/copy.scan.txt"
             count=$((count + 1))
           done < "$list"
 
