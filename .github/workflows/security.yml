@@ -191,10 +191,22 @@ jobs:
           # Materialise the list to a file first. With `done < <(git ls-files ...)` the exit
           # status is discarded: `set -e` cannot see it and `pipefail` does not apply, so a
           # git failure produced zero files, a reassuring message and a GREEN step. Verified.
+          # .gitleaks.toml is in the list below because it is exempt from EVERY rule by
+          # filename — verified, the same bytes renamed to .txt are flagged and in place
+          # they are not. A secret, or an internal reference written into a comment there,
+          # is invisible to the history scan and to the pre-commit hook alike. Not
+          # hypothetical: the change adding the internal-reference rules put the very
+          # identifier they guard into that file twice, and the gate stayed green.
+          #
+          # Comments must stay OUT of the pathspec list below: a `#` line inside a
+          # backslash-continued command ends it, and the next pathspec then runs as a
+          # command. That failed CI at exit 127 rather than silently, which is the good
+          # kind of mistake, but keep them here regardless.
           list="${base}/exempt-list"
           git ls-files -z -- \
             ':(icase)*.svg' \
             ':(icase)*.gltf' \
+            ':(icase).gitleaks.toml' \
             ':(icase)package-lock.json'   ':(icase)**/package-lock.json' \
             ':(icase)npm-shrinkwrap.json' ':(icase)**/npm-shrinkwrap.json' \
             ':(icase)yarn.lock'           ':(icase)**/yarn.lock' \
@@ -229,5 +241,8 @@ jobs:
           fi
 
           echo "Scanning $count file(s) that the default allowlist would otherwise skip:"
-          git ls-files -- ':(icase)*.svg' ':(icase)*.gltf' | sed 's/^/  /'
+          # Echo the same pathspec set the copy loop used. Listing only *.svg and *.gltf here
+          # understated the coverage: nine lockfile names and .gitleaks.toml are copied too, so
+          # the log said "2 files" while the pass had scanned more.
+          cat "$list" | tr '\0' '\n' | sed 's/^/  /'
           "$gl" dir --no-banner --redact --ignore-gitleaks-allow -c .gitleaks.toml "$shadow"

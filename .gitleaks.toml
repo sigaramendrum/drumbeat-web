@@ -64,3 +64,59 @@ keywords = [
     '''://[a-z0-9._%+-]+:\$\{[^}]*\}@''',
     '''://[a-z0-9._%+-]+:\$[A-Za-z_][A-Za-z0-9_]*@''',
   ]
+
+# WHY THIS RULE EXISTS.
+#
+# This repository is PUBLIC and its own README forbids strategy, IP, pilot and roadmap
+# content. Internal decision-record identifiers are none of those things individually — an
+# an identifier of that shape is not a secret — but together they map the decision structure
+# and its phase numbering to anyone reading the landing site's source.
+#
+# It was not hypothetical. README.md named one, from this repo's first public commit
+# (49f3e1e) until the commit that adds this rule. The identifier it named does not resolve
+# to anything, so the string leaked structure without documenting even that.
+#
+# NOTE TO WHOEVER EDITS THIS FILE: do not write a literal example here. This file is
+# EXEMPT from the scan by filename — verified, the same bytes renamed to .txt are flagged
+# and in place they are not — so a literal in this comment is published and unguarded. The
+# first draft of this rule made exactly that mistake, twice, in these lines.
+#
+# Deliberately narrow: two or three digits after ADR, so ordinary prose using the word
+# "adr" does not match. A marketing site has no legitimate reason to name one.
+#
+# NOT COVERED: commit messages. gitleaks scans commit CONTENT, not messages — verified with
+# a scratch repo whose only occurrence was in a message (exit 0). Commit 49f3e1e's subject
+# still contains the string and always will; it is public, and rewriting published history
+# would break every clone for no recovery. Treat it as disclosed.
+
+[[rules]]
+id = "internal-decision-record-identifier"
+description = "Internal decision-record identifier must not appear in a public repository"
+regex = '''(?i)\bADR[-‐‑–—_ ]?[0-9]{2,3}\b'''
+keywords = ["adr"]
+
+# Two more internal-reference classes, salvaged from the superseded ci/disclosure-guard
+# branch. The ticket rule is clean over all history. The repository-name rule fires on four
+# historical lines in 350e733 — those references were deliberately removed from the tree by
+# a later commit whose subject is "stop leaking private detail in a public repo", so the
+# current tree is clean and this rule guards the regression rather than an open wound. The
+# four are fingerprinted in .gitleaksignore; they are public and cannot be unpublished.
+
+[[rules]]
+id = "internal-ticket-identifier"
+description = "Internal issue-tracker identifier must not appear in a public repository"
+regex = '''(?i)\bSIG[-‐‑–—_ ]?[0-9]{1,4}\b'''
+keywords = ["sig"]
+
+[[rules]]
+id = "private-repository-name"
+description = "Private repository name must not appear in a public repository"
+# NO BARE SPACE in the separator class, unlike the two rules above, and no empty separator.
+# This is the landing page for a product called Drumbeat, so "the Drumbeat app" is close to the
+# most likely sentence its copy will ever contain — and with a space in the class the rule fired
+# on exactly that, in CI and in the pre-commit hook:
+#   "Drumbeat app for teams"          -> exit 1
+#   "Download the Drumbeat App today" -> exit 1
+# A repository name is written with a hyphen or an underscore. Prose is not.
+regex = '''(?i)\bdrumbeat[-‐‑–—_]app\b'''
+keywords = ["drumbeat"]
